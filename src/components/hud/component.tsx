@@ -4,7 +4,7 @@ import { useStore } from '../../store/hooks';
 import { intlMessages as arenaMessages } from '../arena/messages';
 import { intlMessages as mainMessages } from '../main/messages';
 import Scoreboard from '../scoreboard/component';
-import { HUD_COLORS, LOW_HEALTH } from './constants';
+import { HEADSHOT_ICON, HUD_COLORS, LOW_HEALTH } from './constants';
 import { intlMessages } from './messages';
 import { nameOf } from './service';
 import Styled from './styles';
@@ -24,6 +24,10 @@ function Hud({ hud, session, onPlay }: HudProps) {
   const fallback = intl.formatMessage(mainMessages.unknownPlayer);
   const name = (userId: string) => nameOf(userId, users, fallback);
   const color = (userId: string) => users[userId]?.color ?? HUD_COLORS.text;
+  const outOfAmmo = state.mag + state.reserve === 0;
+  let ammoText = `${state.mag} / ${state.reserve}`;
+  if (state.reloading) ammoText = intl.formatMessage(intlMessages.reloading);
+  else if (outOfAmmo) ammoText = intl.formatMessage(intlMessages.noAmmo);
 
   if (state.webglError) {
     return (
@@ -52,9 +56,10 @@ function Hud({ hud, session, onPlay }: HudProps) {
             : intlMessages.connecting)}
         </Styled.Notice>
       ) : null}
-      {state.alive && state.locked ? <Styled.Crosshair /> : null}
+      {state.scoped ? <Styled.Scope /> : null}
+      {state.alive && state.locked && !state.scoped ? <Styled.Crosshair /> : null}
       {state.hitMarkerSeq > 0 ? (
-        <Styled.HitMarker key={state.hitMarkerSeq} $head={state.hitMarker === 'head'} />
+        <Styled.HitMarker key={state.hitMarkerSeq} $kind={state.hitMarker} />
       ) : null}
       {state.damageSeq > 0 ? <Styled.DamageFlash key={state.damageSeq} /> : null}
 
@@ -81,7 +86,17 @@ function Hud({ hud, session, onPlay }: HudProps) {
                 <Styled.PlayerName $color={color(item.killer)}>
                   {name(item.killer)}
                 </Styled.PlayerName>
-                {' ✖ '}
+                <Styled.FeedWeapon>
+                  {intl.formatMessage(intlMessages[item.weapon])}
+                  {item.headshot ? (
+                    <Styled.FeedHeadshot
+                      role="img"
+                      aria-label={intl.formatMessage(intlMessages.feedHeadshot)}
+                    >
+                      {HEADSHOT_ICON}
+                    </Styled.FeedHeadshot>
+                  ) : null}
+                </Styled.FeedWeapon>
                 <Styled.PlayerName $color={color(item.victim)}>
                   {name(item.victim)}
                 </Styled.PlayerName>
@@ -95,8 +110,9 @@ function Hud({ hud, session, onPlay }: HudProps) {
         <Styled.Label>{intl.formatMessage(intlMessages.health)}</Styled.Label>
         <Styled.BigNumber $danger={state.health <= LOW_HEALTH}>{state.health}</Styled.BigNumber>
       </Styled.Corner>
-      <Styled.Corner $right>
+      <Styled.Corner $right data-test={DATA_TEST.HUD_AMMO}>
         <Styled.BigNumber>{intl.formatMessage(intlMessages[state.weapon])}</Styled.BigNumber>
+        <Styled.Ammo $low={state.lowAmmo || outOfAmmo}>{ammoText}</Styled.Ammo>
       </Styled.Corner>
       {state.muted ? <Styled.Muted>{intl.formatMessage(intlMessages.muted)}</Styled.Muted> : null}
 

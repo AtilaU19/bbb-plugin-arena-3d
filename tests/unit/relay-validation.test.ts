@@ -1,14 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { parseClientMessage } from '../../relay/src/validation';
 import { MAX_CAUSE_LENGTH } from '../../relay/src/constants';
-import { MAX_COORDINATE, MAX_HEALTH, MAX_WEAPON_INDEX } from '../../src/net/constants';
+import {
+  MAX_COORDINATE, MAX_HEALTH, MAX_PICKUP_INDEX, MAX_WEAPON_INDEX,
+} from '../../src/net/constants';
 
 const send = (message: unknown): string => JSON.stringify(message);
 
 const hello = { type: 'hello', v: 1, round: 'abc-123' };
 const pose = { type: 'pose', p: [1, 2, 3], y: 0.5, x: -0.1, w: 2, on: true };
 const shot = {
-  type: 'shot', id: 7, vt: 1000, o: [0, 1.5, 0], y: 0.2, x: 0, w: 1, seed: 42,
+  type: 'shot', id: 7, vt: 1000, o: [0, 1.5, 0], y: 0.2, x: 0, w: 1, seed: 42, ads: false,
 };
 const env = { type: 'env', kind: 'damage', amount: 10, cause: 'fall' };
 const ping = { type: 'ping', c: 123.5 };
@@ -76,6 +78,23 @@ describe('parseClientMessage', () => {
       expect(parseClientMessage(send({ ...pose, w: MAX_WEAPON_INDEX + 1 }))).toBeNull();
       expect(parseClientMessage(send({ ...shot, w: MAX_WEAPON_INDEX + 1 }))).toBeNull();
       expect(parseClientMessage(send({ ...pose, w: MAX_WEAPON_INDEX }))).not.toBeNull();
+    });
+
+    it('requires a shot to say whether it went through the scope', () => {
+      const { ads, ...withoutAds } = shot;
+      expect(ads).toBe(false);
+      expect(parseClientMessage(send(withoutAds))).toBeNull();
+      expect(parseClientMessage(send({ ...shot, ads: 1 }))).toBeNull();
+      expect(parseClientMessage(send({ ...shot, ads: true }))).toEqual({ ...shot, ads: true });
+    });
+
+    it('parses reloads and pickups, with their index in range', () => {
+      expect(parseClientMessage(send({ type: 'reload', w: 3 }))).toEqual({ type: 'reload', w: 3 });
+      expect(parseClientMessage(send({ type: 'pickup', i: 2 }))).toEqual({ type: 'pickup', i: 2 });
+      expect(parseClientMessage(send({ type: 'reload', w: -1 }))).toBeNull();
+      expect(parseClientMessage(send({ type: 'reload', w: MAX_WEAPON_INDEX + 1 }))).toBeNull();
+      expect(parseClientMessage(send({ type: 'pickup', i: 1.5 }))).toBeNull();
+      expect(parseClientMessage(send({ type: 'pickup', i: MAX_PICKUP_INDEX + 1 }))).toBeNull();
     });
   });
 

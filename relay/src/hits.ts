@@ -1,9 +1,12 @@
 import { seededRandom } from '../../src/commons/random';
-import { createAabb } from '../../src/game/geometry/service';
+import { NO_RELOAD } from '../../src/game/ammo/constants';
+import { hasRound } from '../../src/game/ammo/service';
+import { createHitbox, writeHitbox } from '../../src/game/hitbox/service';
 import { PLAYER } from '../../src/game/player/constants';
-import { writeHitboxes } from '../../src/game/remote/service';
 import { WEAPON_IDS, WEAPONS } from '../../src/game/weapons/constants';
-import { pelletDirections, resolveShot, weaponAt } from '../../src/game/weapons/service';
+import {
+  pelletDirections, resolveShot, shotSpread, weaponAt,
+} from '../../src/game/weapons/service';
 import { ShotTarget } from '../../src/game/weapons/types';
 import { RELAY_LIMITS, RELAY_TIMING } from '../../src/protocol/constants';
 import { ShotMessage } from '../../src/protocol/types';
@@ -38,6 +41,12 @@ export const evaluateShot = (shot: ShotMessage, ctx: ShotContext): ShotVerdict =
   if (shot.w >= WEAPON_IDS.length) {
     return { ok: false, reason: 'weapon' };
   }
+  if (shooter.reloadWeapon !== NO_RELOAD) {
+    return { ok: false, reason: 'reloading' };
+  }
+  if (!hasRound(shooter.ammo, shot.w)) {
+    return { ok: false, reason: 'ammo' };
+  }
   const weapon = WEAPONS[weaponAt(shot.w)];
   if (ctx.now - shooter.lastShotAt < weapon.cooldownMs * SHOT_COOLDOWN_TOLERANCE) {
     return { ok: false, reason: 'cooldown' };
@@ -54,13 +63,17 @@ export const evaluateShot = (shot: ShotMessage, ctx: ShotContext): ShotVerdict =
     if (other.spectator || !other.on || !other.combat.alive) return;
     const sample = sampleHistory(other.history, viewTime);
     if (!sample || !sample.alive || sample.life !== other.life) return;
-    const body = createAabb();
-    const head = createAabb();
-    writeHitboxes({ p: sample.p, y: 0, x: 0 }, body, head);
-    targets.push({ userId: other.userId, body, head });
+    const hitbox = writeHitbox({ p: sample.p, y: sample.y, x: sample.x }, createHitbox());
+    targets.push({ userId: other.userId, hitbox });
   });
 
-  const directions = pelletDirections(shot.y, shot.x, weapon, seededRandom(shot.seed));
+  const directions = pelletDirections(
+    shot.y,
+    shot.x,
+    weapon.pellets,
+    shotSpread(weapon, shot.ads),
+    seededRandom(shot.seed),
+  );
   const result = resolveShot(shot.o, directions, ctx.level.blocks, targets, weapon);
   return { ok: true, viewTime, result };
 };

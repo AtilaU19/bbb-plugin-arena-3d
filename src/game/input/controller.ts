@@ -1,5 +1,5 @@
 import { movementFromKeys, isGameKey } from './service';
-import { KEY_BINDINGS, PRIMARY_BUTTON, WEAPON_KEYS } from './constants';
+import { KEY_BINDINGS, PRIMARY_BUTTON, SECONDARY_BUTTON, WEAPON_KEYS } from './constants';
 import { InputController } from './types';
 
 /**
@@ -9,11 +9,13 @@ import { InputController } from './types';
 export const createInputController = (canvas: HTMLCanvasElement): InputController => {
   const pressed = new Set<string>();
   let firing = false;
+  let aiming = false;
   let lookX = 0;
   let lookY = 0;
   let weaponSlot: number | null = null;
   let weaponStep = 0;
   let toggleMute = false;
+  let reload = false;
 
   const isLocked = () => document.pointerLockElement === canvas;
 
@@ -25,6 +27,7 @@ export const createInputController = (canvas: HTMLCanvasElement): InputControlle
     const slot = WEAPON_KEYS.indexOf(event.code);
     if (slot >= 0) weaponSlot = slot;
     if (KEY_BINDINGS.nextWeapon.includes(event.code)) weaponStep += 1;
+    if (KEY_BINDINGS.reload.includes(event.code)) reload = true;
     if (KEY_BINDINGS.mute.includes(event.code)) toggleMute = true;
   };
   const onKeyUp = (event: KeyboardEvent) => { pressed.delete(event.code); };
@@ -34,11 +37,16 @@ export const createInputController = (canvas: HTMLCanvasElement): InputControlle
     lookY += event.movementY;
   };
   const onMouseDown = (event: MouseEvent) => {
-    if (event.button === PRIMARY_BUTTON && isLocked()) firing = true;
+    if (!isLocked()) return;
+    if (event.button === PRIMARY_BUTTON) firing = true;
+    if (event.button === SECONDARY_BUTTON) aiming = true;
   };
   const onMouseUp = (event: MouseEvent) => {
     if (event.button === PRIMARY_BUTTON) firing = false;
+    if (event.button === SECONDARY_BUTTON) aiming = false;
   };
+  // The secondary button is the scope, not the browser's menu.
+  const onContextMenu = (event: MouseEvent) => { event.preventDefault(); };
   const onWheel = (event: WheelEvent) => {
     if (!isLocked()) return;
     event.preventDefault();
@@ -48,6 +56,7 @@ export const createInputController = (canvas: HTMLCanvasElement): InputControlle
     if (isLocked()) return;
     pressed.clear();
     firing = false;
+    aiming = false;
   };
 
   document.addEventListener('keydown', onKeyDown);
@@ -56,6 +65,7 @@ export const createInputController = (canvas: HTMLCanvasElement): InputControlle
   document.addEventListener('mouseup', onMouseUp);
   document.addEventListener('pointerlockchange', onLockChange);
   canvas.addEventListener('mousedown', onMouseDown);
+  canvas.addEventListener('contextmenu', onContextMenu);
   canvas.addEventListener('wheel', onWheel, { passive: false });
 
   return {
@@ -63,10 +73,12 @@ export const createInputController = (canvas: HTMLCanvasElement): InputControlle
       const snapshot = {
         ...movementFromKeys(pressed),
         firing,
+        aiming,
         lookX,
         lookY,
         weaponSlot,
         weaponStep,
+        reload,
         toggleMute,
         locked: isLocked(),
       };
@@ -74,6 +86,7 @@ export const createInputController = (canvas: HTMLCanvasElement): InputControlle
       lookY = 0;
       weaponSlot = null;
       weaponStep = 0;
+      reload = false;
       toggleMute = false;
       return snapshot;
     },
@@ -93,6 +106,7 @@ export const createInputController = (canvas: HTMLCanvasElement): InputControlle
       document.removeEventListener('mouseup', onMouseUp);
       document.removeEventListener('pointerlockchange', onLockChange);
       canvas.removeEventListener('mousedown', onMouseDown);
+      canvas.removeEventListener('contextmenu', onContextMenu);
       canvas.removeEventListener('wheel', onWheel);
       if (isLocked()) document.exitPointerLock();
     },

@@ -1,5 +1,6 @@
 import styled, { css, keyframes } from 'styled-components';
-import { HUD_COLORS, HUD_FONT } from './constants';
+import { HitMarker as HitMarkerKind } from '../../game/hud/types';
+import { HIT_MARKER, HUD_COLORS, HUD_FONT, SCOPE_RADIUS } from './constants';
 
 const fadeOut = keyframes`
   from { opacity: 1; }
@@ -41,12 +42,43 @@ const Crosshair = styled.div`
   &::after { top: 8px; left: 0; width: 18px; height: 2px; }
 `;
 
-const HitMarker = styled.div<{ $head: boolean }>`
+/** Looking through a scope: a round view in black, with thin crosshairs across it. */
+const Scope = styled.div`
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    circle at center,
+    transparent ${SCOPE_RADIUS},
+    #000 calc(${SCOPE_RADIUS} + 2px)
+  );
+
+  &::before, &::after {
+    content: '';
+    position: absolute;
+    background: #000;
+  }
+
+  &::before {
+    left: calc(50% - 1px);
+    top: calc(50% - ${SCOPE_RADIUS});
+    width: 2px;
+    height: calc(2 * ${SCOPE_RADIUS});
+  }
+
+  &::after {
+    top: calc(50% - 1px);
+    left: calc(50% - ${SCOPE_RADIUS});
+    width: calc(2 * ${SCOPE_RADIUS});
+    height: 2px;
+  }
+`;
+
+const HitMarker = styled.div<{ $kind: HitMarkerKind }>`
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 28px;
-  height: 28px;
+  width: ${({ $kind }) => HIT_MARKER[$kind].size}px;
+  height: ${({ $kind }) => HIT_MARKER[$kind].size}px;
   transform: translate(-50%, -50%) rotate(45deg);
   animation: ${fadeOut} 250ms ease-out forwards;
   ${noMotion}
@@ -54,11 +86,11 @@ const HitMarker = styled.div<{ $head: boolean }>`
   &::before, &::after {
     content: '';
     position: absolute;
-    background: ${({ $head }) => ($head ? HUD_COLORS.headshot : HUD_COLORS.hit)};
+    background: ${({ $kind }) => HIT_MARKER[$kind].color};
   }
 
-  &::before { left: 13px; top: 0; width: 2px; height: 28px; }
-  &::after { top: 13px; left: 0; width: 28px; height: 2px; }
+  &::before { left: calc(50% - 1px); top: 0; width: 2px; height: 100%; }
+  &::after { top: calc(50% - 1px); left: 0; width: 100%; height: 2px; }
 `;
 
 const DamageFlash = styled.div`
@@ -90,6 +122,12 @@ const BigNumber = styled.div<{ $danger?: boolean }>`
   color: ${({ $danger }) => ($danger ? HUD_COLORS.danger : HUD_COLORS.text)};
 `;
 
+const Ammo = styled.div<{ $low: boolean }>`
+  margin-top: 4px;
+  font-size: 14px;
+  color: ${({ $low }) => ($low ? HUD_COLORS.danger : HUD_COLORS.text)};
+`;
+
 const Stats = styled.div`
   display: flex;
   gap: 16px;
@@ -116,6 +154,20 @@ const Feed = styled.ul`
 
 const PlayerName = styled.span<{ $color: string }>`
   color: ${({ $color }) => $color};
+`;
+
+const FeedWeapon = styled.span`
+  margin: 0 6px;
+  padding: 1px 4px;
+  border: 1px solid ${HUD_COLORS.accent};
+  border-radius: 2px;
+  color: ${HUD_COLORS.accent};
+  font-size: 9px;
+`;
+
+const FeedHeadshot = styled.span`
+  margin-left: 4px;
+  color: ${HUD_COLORS.headshot};
 `;
 
 const Death = styled.div`
@@ -212,14 +264,18 @@ const Notice = styled.div`
 export default {
   Layer,
   Crosshair,
+  Scope,
   HitMarker,
   DamageFlash,
   Corner,
   Label,
   BigNumber,
+  Ammo,
   Stats,
   Feed,
   PlayerName,
+  FeedWeapon,
+  FeedHeadshot,
   Death,
   Muted,
   Overlay,

@@ -19,12 +19,12 @@ export const intlMessages = defineMessages({
   controlsAim: {
     id: 'hud.controls.aim',
     description: 'Controls help: aiming and shooting',
-    defaultMessage: 'Mouse: aim · Click: shoot',
+    defaultMessage: 'Mouse: aim · Click: shoot · Right click: sniper scope',
   },
   controlsWeapons: {
     id: 'hud.controls.weapons',
     description: 'Controls help: weapons',
-    defaultMessage: '1 / 2, Q or mouse wheel: switch weapon',
+    defaultMessage: '1–4, Q or mouse wheel: switch weapon · R: reload',
   },
   controlsOther: {
     id: 'hud.controls.other',
@@ -56,6 +56,26 @@ export const intlMessages = defineMessages({
     description: 'Name of the shotgun',
     defaultMessage: 'Shotgun',
   },
+  smg: {
+    id: 'weapon.smg',
+    description: 'Name of the submachine gun',
+    defaultMessage: 'SMG',
+  },
+  sniper: {
+    id: 'weapon.sniper',
+    description: 'Name of the sniper rifle',
+    defaultMessage: 'Sniper',
+  },
+  reloading: {
+    id: 'hud.reloading',
+    description: 'Shown instead of the ammo count while reloading',
+    defaultMessage: 'Reloading…',
+  },
+  noAmmo: {
+    id: 'hud.noAmmo',
+    description: 'Shown instead of the ammo count when the weapon has no rounds left',
+    defaultMessage: 'No ammo',
+  },
   fraggedBy: {
     id: 'hud.fraggedBy',
     description: 'Death message; {name} is who killed you',
@@ -75,6 +95,11 @@ export const intlMessages = defineMessages({
     id: 'feed.suicide',
     description: 'Kill feed line for a suicide; {victim} is the player',
     defaultMessage: '{victim} fragged themselves',
+  },
+  feedHeadshot: {
+    id: 'feed.headshot',
+    description: 'Accessible label of the headshot mark in the kill feed',
+    defaultMessage: 'Headshot',
   },
   muted: {
     id: 'hud.muted',

@@ -1,6 +1,6 @@
 import { Vec3 } from '../../src/commons/types';
 import {
-  MAX_COORDINATE, MAX_COUNTER, MAX_HEALTH, MAX_WEAPON_INDEX,
+  MAX_COORDINATE, MAX_COUNTER, MAX_HEALTH, MAX_PICKUP_INDEX, MAX_WEAPON_INDEX,
 } from '../../src/net/constants';
 import { CLIENT_MESSAGE, ENV_KIND, ROUND_PATTERN } from '../../src/protocol/constants';
 import { ClientMessage } from '../../src/protocol/types';
@@ -57,10 +57,10 @@ export const parseClientMessage = (raw: string): ClientMessage | null => {
     }
 
     case CLIENT_MESSAGE.SHOT: {
-      const { id, vt, o, y, x, w, seed } = data;
+      const { id, vt, o, y, x, w, seed, ads } = data;
       if (!isInt(id, 0, MAX_COUNTER) || !isFiniteNumber(vt) || !isVec3(o)
         || !isFiniteNumber(y) || !isFiniteNumber(x) || !isInt(w, 0, MAX_WEAPON_INDEX)
-        || !isInt(seed, 0, MAX_SEED)) {
+        || !isInt(seed, 0, MAX_SEED) || typeof ads !== 'boolean') {
         return null;
       }
       return {
@@ -72,6 +72,7 @@ export const parseClientMessage = (raw: string): ClientMessage | null => {
         x,
         w,
         seed,
+        ads,
       };
     }
 
@@ -91,6 +92,22 @@ export const parseClientMessage = (raw: string): ClientMessage | null => {
         return null;
       }
       return { type: CLIENT_MESSAGE.PING, c };
+    }
+
+    case CLIENT_MESSAGE.RELOAD: {
+      const { w } = data;
+      if (!isInt(w, 0, MAX_WEAPON_INDEX)) {
+        return null;
+      }
+      return { type: CLIENT_MESSAGE.RELOAD, w };
+    }
+
+    case CLIENT_MESSAGE.PICKUP: {
+      const { i } = data;
+      if (!isInt(i, 0, MAX_PICKUP_INDEX)) {
+        return null;
+      }
+      return { type: CLIENT_MESSAGE.PICKUP, i };
     }
 
     default:

@@ -10,9 +10,6 @@ export const CAMERA = {
   deadRoll: 0.6, // radians
 };
 
-/** Feet this far below a pickup's base or above it still grab it. */
-export const PICKUP_REACH_HEIGHT = 1.5; // meters
-
 /** Shotgun tracers drawn per shot; every pellet still counts. */
 export const MAX_TRACERS_PER_SHOT = 3;
 
@@ -31,3 +28,12 @@ export const POSE_SEND = {
   /** An unchanged pose is still sent this often, so the relay knows we are here. */
   keepaliveMs: 1000,
 };
+
+/** Hits we land on arms and legs sound softer than on the body. */
+export const LIMB_HIT_VOLUME = 0.6;
+
+/** Past this much zoom (0 to 1) the gun leaves the view and the scope's lens fills the screen. */
+export const SCOPE_LENS_AT = 0.5;
+
+/** The empty gun's click repeats at most this often while the trigger is held. */
+export const EMPTY_CLICK_MS = 400;

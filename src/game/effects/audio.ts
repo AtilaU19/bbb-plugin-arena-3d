@@ -66,6 +66,15 @@ const recipes = (noiseBuffer: AudioBuffer): Record<SoundId, Recipe> => ({
     noise(ctx, out, at, noiseBuffer, 1800, 0.35, 1);
     tone(ctx, out, at, 'sawtooth', 160, 40, 0.25, 0.6);
   },
+  smg: (ctx, out, at) => {
+    tone(ctx, out, at, 'square', 700, 180, 0.07, 0.35);
+    noise(ctx, out, at, noiseBuffer, 2600, 0.06, 0.35);
+  },
+  sniper: (ctx, out, at) => {
+    tone(ctx, out, at, 'sine', 1900, 700, 0.06, 0.3);
+    noise(ctx, out, at, noiseBuffer, 1400, 0.55, 1);
+    tone(ctx, out, at, 'sawtooth', 200, 30, 0.5, 0.7);
+  },
   hit: (ctx, out, at) => tone(ctx, out, at, 'sine', 1400, 1100, 0.06, 0.5),
   headshot: (ctx, out, at) => {
     tone(ctx, out, at, 'square', 1800, 1600, 0.05, 0.4);
@@ -91,6 +100,17 @@ const recipes = (noiseBuffer: AudioBuffer): Record<SoundId, Recipe> => ({
     tone(ctx, out, at + 0.08, 'triangle', 990, 990, 0.12, 0.5);
   },
   respawn: (ctx, out, at) => tone(ctx, out, at, 'triangle', 200, 800, 0.3, 0.4),
+  empty: (ctx, out, at) => tone(ctx, out, at, 'square', 1300, 1100, 0.03, 0.25),
+  reload: (ctx, out, at) => {
+    noise(ctx, out, at, noiseBuffer, 2500, 0.05, 0.4);
+    tone(ctx, out, at + 0.2, 'square', 700, 500, 0.05, 0.3);
+    noise(ctx, out, at + 0.35, noiseBuffer, 3500, 0.04, 0.4);
+  },
+  ammo: (ctx, out, at) => {
+    tone(ctx, out, at, 'triangle', 440, 440, 0.07, 0.45);
+    tone(ctx, out, at + 0.07, 'triangle', 660, 660, 0.07, 0.45);
+    noise(ctx, out, at + 0.07, noiseBuffer, 3000, 0.05, 0.25);
+  },
 });
 
 export const createArenaAudio = (): ArenaAudio => {

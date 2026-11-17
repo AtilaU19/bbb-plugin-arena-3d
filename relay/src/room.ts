@@ -1,19 +1,30 @@
 import { Vec3 } from '../../src/commons/types';
+import { NO_RELOAD } from '../../src/game/ammo/constants';
+import {
+  ammoLines, canReload, canTakeAmmoBox, reloaded, spawnAmmo, spendRound, withAmmoBox,
+} from '../../src/game/ammo/service';
+import {
+  PICKUP_RADIUS, PICKUP_REACH_HEIGHT, PICKUP_RESPAWN_MS,
+} from '../../src/game/combat/constants';
 import {
   canHeal, createCombatState, heal, respawn, respawnDue, takeDamage,
 } from '../../src/game/combat/service';
+import { distanceXZ } from '../../src/game/geometry/service';
+import { zoneIndex } from '../../src/game/hitbox/service';
 import { ARENA_LEVEL } from '../../src/game/level/layout';
 import { pickSpawn } from '../../src/game/level/service';
+import { WEAPONS } from '../../src/game/weapons/constants';
+import { weaponAt } from '../../src/game/weapons/service';
 import {
-  CLIENT_MESSAGE, CLOSE_CODES, ENV_KIND, ENVIRONMENT_WEAPON, RELAY_LIMITS, RELAY_TIMING,
-  SERVER_MESSAGE, SNAPSHOT_FLAGS,
+  AMMO_UPDATE, CLIENT_MESSAGE, CLOSE_CODES, ENV_KIND, ENVIRONMENT_WEAPON, ENVIRONMENT_ZONE,
+  RELAY_LIMITS, RELAY_TIMING, SERVER_MESSAGE, SNAPSHOT_FLAGS,
 } from '../../src/protocol/constants';
 import {
-  ClientMessage, EnvMessage, PlayerInfo, PoseMessage, ScoreLine, Scores, ServerMessage,
-  ShotMessage, SnapshotEntry,
+  AmmoUpdate, ClientMessage, EnvMessage, PickupMessage, PlayerInfo, PoseMessage, ReloadMessage,
+  ScoreLine, Scores, ServerMessage, ShotMessage, SnapshotEntry,
 } from '../../src/protocol/types';
 import {
-  MAX_HEAL, MAX_PLAYER_SPEED, POSE_PRECISION, TELEPORT_SLACK,
+  MAX_HEAL, MAX_PLAYER_SPEED, PICKUP_SLACK, POSE_PRECISION, TELEPORT_SLACK,
 } from './constants';
 import { recordHistory } from './history';
 import { evaluateShot } from './hits';
@@ -83,9 +94,12 @@ export const createRoom = (key: string, options: RoomOptions): Room => {
     return pickSpawn(level.spawns, others, random);
   };
 
-  const onDeath = (victim: PlayerState, killerId: string, weapon: number) => {
+  const onDeath = (victim: PlayerState, killerId: string, weapon: number, zone: number) => {
     victim.dirty = true;
-    broadcast({ type: SERVER_MESSAGE.KILL, by: killerId, to: victim.userId, w: weapon });
+    victim.reloadWeapon = NO_RELOAD;
+    broadcast({
+      type: SERVER_MESSAGE.KILL, by: killerId, to: victim.userId, w: weapon, zone,
+    });
 
     const [victimKills, victimDeaths] = scores.get(victim.userId) ?? [0, 0];
     scores.set(victim.userId, [victimKills, victimDeaths + 1]);
@@ -94,6 +108,24 @@ export const createRoom = (key: string, options: RoomOptions): Room => {
       scores.set(killerId, [killerKills + 1, killerDeaths]);
     }
     sendScores();
+  };
+
+  /** A player's own ammo, to them only. */
+  const sendAmmo = (player: PlayerState, why: AmmoUpdate) => {
+    player.client.send({ type: SERVER_MESSAGE.AMMO, why, a: ammoLines(player.ammo) });
+  };
+
+  /**
+   * Finishes a reload that is due. A shot or a pose may finish it `tolerance` ms early: it
+   * crossed the network after the client's own reload ended.
+   */
+  const finishReload = (player: PlayerState, now: number, tolerance: number) => {
+    if (player.reloadWeapon === NO_RELOAD || now < player.reloadDoneAt - tolerance) {
+      return;
+    }
+    player.ammo = reloaded(player.ammo, player.reloadWeapon);
+    player.reloadWeapon = NO_RELOAD;
+    sendAmmo(player, AMMO_UPDATE.RELOAD);
   };
 
   const join = (client: RoomClient) => {
@@ -125,6 +157,10 @@ export const createRoom = (key: string, options: RoomOptions): Room => {
         life: 1,
         lastPoseAt: now,
         lastShotAt: -Infinity,
+        ammo: spawnAmmo(),
+        reloadWeapon: NO_RELOAD,
+        reloadDoneAt: 0,
+        pickupReadyAt: level.pickups.map(() => 0),
         dirty: true,
         history: [],
       };
@@ -133,7 +169,7 @@ export const createRoom = (key: string, options: RoomOptions): Room => {
 
       if (!spectator) {
         recordHistory(created.history, {
-          t: now, p: [...created.p] as Vec3, alive: true, life: 1,
+          t: now, p: [...created.p] as Vec3, y: created.y, x: created.x, alive: true, life: 1,
         });
       }
       if (!scores.has(client.userId)) {
@@ -155,6 +191,9 @@ export const createRoom = (key: string, options: RoomOptions): Room => {
       scores: scoresObject(),
       names: namesObject(),
     });
+    if (!player.spectator) {
+      sendAmmo(player, AMMO_UPDATE.SPAWN);
+    }
     emptySinceAt = null;
   };
 
@@ -174,6 +213,11 @@ export const createRoom = (key: string, options: RoomOptions): Room => {
     now: number) => {
     if (player.spectator) {
       return;
+    }
+    finishReload(player, now, RELAY_TIMING.reloadToleranceMs);
+    if (player.reloadWeapon !== NO_RELOAD && message.w !== player.reloadWeapon) {
+      // Switching weapons drops the reload.
+      player.reloadWeapon = NO_RELOAD;
     }
     player.y = round2(message.y);
     player.x = round2(message.x);
@@ -198,6 +242,7 @@ export const createRoom = (key: string, options: RoomOptions): Room => {
     message: ShotMessage,
     now: number,
   ) => {
+    finishReload(player, now, RELAY_TIMING.reloadToleranceMs);
     const others = [...players.values()].filter((p) => p !== player);
     const verdict = evaluateShot(message, {
       now,
@@ -208,11 +253,15 @@ export const createRoom = (key: string, options: RoomOptions): Room => {
     });
     if (!verdict.ok) {
       player.client.send({ type: SERVER_MESSAGE.REJECT, id: message.id, reason: verdict.reason });
+      if (!player.spectator) {
+        sendAmmo(player, AMMO_UPDATE.SYNC);
+      }
       return;
     }
 
     const { userId } = player;
     player.lastShotAt = now;
+    player.ammo = spendRound(player.ammo, message.w);
     broadcast({
       type: SERVER_MESSAGE.SHOT,
       by: userId,
@@ -232,18 +281,20 @@ export const createRoom = (key: string, options: RoomOptions): Room => {
       }
       const outcome = takeDamage(target.combat, damage, userId, targetId, now);
       target.combat = outcome.state;
+      const zone = result.zoneByUser.get(targetId);
+      const zoneId = zone ? zoneIndex(zone) : ENVIRONMENT_ZONE;
       if (outcome.taken > 0) {
         broadcast({
           type: SERVER_MESSAGE.HIT,
           by: userId,
           to: targetId,
           dmg: outcome.taken,
-          head: result.headshotUsers.has(targetId),
+          zone: zoneId,
           hp: outcome.state.health,
         });
       }
       if (outcome.died) {
-        onDeath(target, userId, message.w);
+        onDeath(target, userId, message.w, zoneId);
       }
     });
   };
@@ -263,17 +314,49 @@ export const createRoom = (key: string, options: RoomOptions): Room => {
           by: userId,
           to: userId,
           dmg: outcome.taken,
-          head: false,
+          zone: ENVIRONMENT_ZONE,
           hp: outcome.state.health,
         });
       }
       if (outcome.died) {
-        onDeath(player, userId, ENVIRONMENT_WEAPON);
+        onDeath(player, userId, ENVIRONMENT_WEAPON, ENVIRONMENT_ZONE);
       }
     } else if (canHeal(player.combat)) {
       player.combat = heal(player.combat, Math.min(message.amount, MAX_HEAL));
       broadcast({ type: SERVER_MESSAGE.HEALTH, id: userId, hp: player.combat.health });
     }
+  };
+
+  const handleReload = (player: PlayerState, message: ReloadMessage, now: number) => {
+    if (player.spectator || !player.combat.alive) {
+      return;
+    }
+    finishReload(player, now, RELAY_TIMING.reloadToleranceMs);
+    if (player.reloadWeapon !== NO_RELOAD) {
+      return;
+    }
+    if (!canReload(player.ammo, message.w)) {
+      sendAmmo(player, AMMO_UPDATE.SYNC);
+      return;
+    }
+    player.reloadWeapon = message.w;
+    player.reloadDoneAt = now + WEAPONS[weaponAt(message.w)].ammo.reloadMs;
+  };
+
+  /** An ammo box counts only when the relay sees the player by it, and it is theirs to take. */
+  const handlePickup = (player: PlayerState, message: PickupMessage, now: number) => {
+    const pickup = level.pickups[message.i];
+    if (!pickup || pickup.kind !== 'ammo' || player.spectator || !player.combat.alive) {
+      return;
+    }
+    const near = distanceXZ(player.p, pickup.position) <= PICKUP_RADIUS + PICKUP_SLACK
+      && Math.abs(player.p[1] - pickup.position[1]) <= PICKUP_REACH_HEIGHT + PICKUP_SLACK;
+    if (!near || now < player.pickupReadyAt[message.i] || !canTakeAmmoBox(player.ammo)) {
+      return;
+    }
+    player.pickupReadyAt[message.i] = now + PICKUP_RESPAWN_MS;
+    player.ammo = withAmmoBox(player.ammo);
+    sendAmmo(player, AMMO_UPDATE.PICKUP);
   };
 
   const handle = (userId: string, message: ClientMessage) => {
@@ -297,6 +380,12 @@ export const createRoom = (key: string, options: RoomOptions): Room => {
       case CLIENT_MESSAGE.ENV:
         handleEnv(player, message, now);
         return;
+      case CLIENT_MESSAGE.RELOAD:
+        handleReload(player, message, now);
+        return;
+      case CLIENT_MESSAGE.PICKUP:
+        handlePickup(player, message, now);
+        return;
       default:
     }
   };
@@ -310,6 +399,8 @@ export const createRoom = (key: string, options: RoomOptions): Room => {
       }
       player.combat = respawn(player.combat, now);
       player.life += 1;
+      player.ammo = spawnAmmo();
+      player.reloadWeapon = NO_RELOAD;
       const spawn = spawnPoint(player.userId);
       player.p = [...spawn.position] as Vec3;
       player.y = spawn.yaw;
@@ -321,7 +412,10 @@ export const createRoom = (key: string, options: RoomOptions): Room => {
         p: [...spawn.position] as Vec3,
         y: spawn.yaw,
       });
+      sendAmmo(player, AMMO_UPDATE.SPAWN);
     });
+
+    players.forEach((player) => finishReload(player, now, 0));
 
     players.forEach((player) => {
       if (player.spectator) {
@@ -330,6 +424,8 @@ export const createRoom = (key: string, options: RoomOptions): Room => {
       recordHistory(player.history, {
         t: now,
         p: [...player.p] as Vec3,
+        y: player.y,
+        x: player.x,
         alive: player.combat.alive,
         life: player.life,
       });
